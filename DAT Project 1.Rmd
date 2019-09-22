@@ -1,0 +1,191 @@
+### DAT607- Project 1 ###
+#### Devanshu Mehrotra ####
+##### 9/22/2019 #####
+
+    
+### Purpose ###
+
+The Purpose of this project is to create an R markdown file which will scrape a Chess player cross table to extract specific columns, create a column to calculate an average measure and finally generate a CSV file containing this aggregated information. 
+
+### Challenges ###
+After review of the text file provided, the project presents the following main challenges:
+
+1. Player information to be extracted is spread over two rows where odd rows contain Player's Number, Name and Total Number of Points, and even rows contain Player’s State and Player’s Pre-Rating. 
+
+2. The formatting of the input text file is such that the data contains different special characters (-,|) and extra spaces (both leading and trailing) 
+
+3. The average measure to be calculated is dependent on rating of a player's opponents and is non linear in nature. 
+
+### Solution ###
+
+#### Step 1 - Import required libraries ####
+
+```{r}
+library(stringr)
+library(DT)
+```
+
+
+
+#### Step 2 - Read the provided text file and create a dataframe####
+
+- Note that since the file has individual information over multiple rows, we are going to use readLines instead of read.Table
+
+```{r}
+tinfo<- readLines("tournamentinfo.txt")
+head(tinfo,4)
+```
+
+
+#### Step 3 - Remove headers and any special characters that are not essential to the output ####
+
+```{r}
+df<- str_replace_all(tinfo, "^-+$|", "")
+df<-df[-c(1:4)]
+head(df,3)
+```
+
+
+#### Step 4 -Seperate alternating rows ####
+- Substep 4.1- Since we need different information from alternating rows, this step will create two lists. One with index locations of odd rows and one with index locations of even rows
+
+```{r}
+indexo <- c(seq(1, length(df), 3))
+indexe <- c(seq(2, length(df), 3))
+head(indexo,3)
+head(indexe,3)
+```
+
+- Substep 4.2- Seperate odd and even rows using the index lists created above
+
+```{r}
+name <- df[indexo]
+other_info <- df[indexe]
+head(name,2)
+head(other_info,2)
+```
+
+
+#### Step 5 - Extracting the required information using Regex ####
+- Substep 5.1 - Create the required fields by extracting data using regex 
+```{r}
+
+# Extract Player Number and Name and total points. All numeric fields will be converted as such
+player_no. <- str_extract(name, "^\\s+(\\d+)\\s+\\|")
+player_name <- str_extract(name, "\\s+([[:alpha:]- ]+)\\b\\s*\\|")
+total_points <- as.numeric((str_extract(name, "[[:digit:]]+\\.[[:digit:]]")))
+
+# Extract Player State, and Player Pre rating
+state <- str_extract(other_info, "[[:alpha:]]{2}")
+pre_rating <- str_extract(other_info, ".\\: \\s?[[:digit:]]{3,4}")
+
+# Review the results
+head(player_no.,2)
+head(player_name,2)
+head(total_points,2)
+head(state,2)
+head(pre_rating,2)
+```
+Substep 5.2 - Upon review we note that some of the fields are not formatted appropriately and might contain special characters or extra spaces. These need to be removed or replaced.
+
+```{r}
+
+# Remove special characters and spaces. Convert to numeric where appropriate
+player_no. <- trimws(str_remove(player_no.,"[|]"),"both")
+player_name <- trimws(str_remove(player_name,"[|]"),"both")
+pre_rating <- as.numeric(trimws(str_remove(pre_rating,"R: "),"both"))
+
+```
+
+#### Step 6 - Create the Average Pre Chess Rating of Opponents calculated column ####
+- Substep 6.1 - Extract all opponets the individual has played against
+
+```{r}
+opponents <- str_extract_all(name, "[[:digit:]]{1,2}\\|")
+
+# Using str_remove to remove the | led to a "not an atmoic vector error". As an alternative we will use regex again to extract the numbers in the current vector and then use lapply to convert each member of the list to a numeric
+
+opponents <- (str_extract_all(opponents,"[[:digit:]]{1,2}"))
+
+opponents <- lapply(opponents, as.numeric)
+
+```
+
+- Substep 6.2 - Create a function that loops to calculate average pre rating 
+```{r}
+Avg <- list()
+for (a in 1:length(opponents))#since there are individuals who played less than 7 rounds #
+  {
+  Avg[a] <-ceiling(mean(pre_rating[unlist(opponents[a])])) #Rounding to the next highest integer
+}
+```
+
+- Substep 6.3 - Apply the function created above
+```{r}
+Average_oppnt_prerating <- lapply(Avg, as.numeric)
+```
+
+#### Step 7 - Create the final dataframe ####
+- Create the final dataframe which contains the columns "Player’s Name, Player’s State, Total Number of Points, Player’s Pre-Rating, and Average Pre Chess Rating of Opponents" as specificed by the project instructions
+
+```{r}
+finaldf <-data.frame(player_name,state,total_points,pre_rating,unlist(Average_oppnt_prerating))
+
+#Changing the column name Average_oppnt_prerating to AOPR for ease of use
+names(finaldf)[5] <- "AOPR"
+
+#Review the resulting dataframe
+head(finaldf)
+```
+
+#### Final Step - Create the csv ####
+
+```{r}
+ write.csv(finaldf, file = "ChessPlayerData.csv")
+```
+ 
+#### Creating a menu to give users a choice before creating a csv file ####
+- Note: Per instructions for creating a menu as explained in the "Introduction to programming and data processing" channel on youtube, two functions (inputNumber,displaymenu) were created below. These combined with the final snippet of code below give users a choice to either create a csv file or to quit. However knitr does not currently wait for user input. Next steps I will be working on using the Subprocess library to run the interactive code in a seperate R session to see if it works.
+
+
+inputNumber <- function(prompt){
+  
+ while(TRUE) {
+   num = suppressWarnings(as.numeric(readline(prompt)))
+   if(!is.na(num)){
+     break
+   }
+ } 
+  return(num)
+}
+  
+displayMenu <- function(options){
+  
+  
+  #Display Menu options
+  for (i in 1:length(options)){
+    cat(sprintf("%d.%s\n",i,options[i]))
+  }
+  
+  #Get a valid menu choice
+  
+  choice <- 0
+  while (!any(choice ==1:length(options))){
+    choice = inputNumber ("Please choose from the menu below:")
+  }
+  
+  return(choice)
+  
+}
+
+menuItems <- c ("Create a csv", "Quit")
+
+while(TRUE) {
+  #choice <- displayMenu(menuItems)
+  if (choice==1) {
+    write.csv(finaldf, file = "ChessPlayerData.csv")
+    } else if (choice==2){break
+  }
+}
+
+
